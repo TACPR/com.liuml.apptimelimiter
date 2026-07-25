@@ -2,7 +2,7 @@
 
 Precision app-time control for Android power users who want policy, telemetry, and enforcement in the same loop.
 
-Current version: `0.9.5`
+Current version: `0.9.6`
 
 ## Why Not Just Use Stock Screen Time?
 

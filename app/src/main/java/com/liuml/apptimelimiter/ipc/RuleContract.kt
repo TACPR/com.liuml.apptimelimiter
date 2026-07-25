@@ -29,6 +29,7 @@ object RuleContract {
     const val KEY_COOLDOWN_ENABLED = "cooldown_enabled"
     const val KEY_COOLDOWN_SECONDS = "cooldown_seconds"
     const val KEY_VERSION = "version"
+    const val KEY_RULESET_GENERATION = "ruleset_generation"
     const val KEY_EXIT_WARNING_ENABLED = "exit_warning_enabled"
     const val KEY_FULL_SCREEN_EXIT_WARNING_ENABLED = "full_screen_exit_warning_enabled"
     const val KEY_EXIT_WARNING_VIBRATION_ENABLED = "exit_warning_vibration_enabled"

@@ -76,6 +76,9 @@ object UiText {
         if (source.startsWith("✓ ")) {
             return "✓ ${translate(source.removePrefix("✓ "), SupportedLanguage.ENGLISH)}"
         }
+        if (source.startsWith("• ")) {
+            return "• ${translate(source.removePrefix("• "), SupportedLanguage.ENGLISH)}"
+        }
         if (" · " in source) {
             val translated = source.split(" · ")
                 .joinToString(" · ") { translate(it, SupportedLanguage.ENGLISH) }
@@ -91,6 +94,9 @@ object UiText {
         }
         Regex("^(\\d+) 个分组共享每日额度$").matchEntire(source)?.let {
             return "${it.groupValues[1]} shared-allowance groups"
+        }
+        Regex("^(\\d+) 个应用分组$").matchEntire(source)?.let {
+            return "${it.groupValues[1]} app groups"
         }
         Regex("^已验证 (\\d+) / (\\d+) 个应用$").matchEntire(source)?.let {
             return "${it.groupValues[1]} / ${it.groupValues[2]} apps verified"
@@ -123,6 +129,11 @@ object UiText {
         Regex("^(\\d+) 个$").matchEntire(source)?.let { return it.groupValues[1] }
         Regex("^启动 (\\d+) 次 · 限制触发 (\\d+) 次$").matchEntire(source)?.let {
             return "${it.groupValues[1]} launches · ${it.groupValues[2]} limit hits"
+        }
+        Regex("^共享每日：已用 (.+) / (.+) · 剩余 (.+)$").matchEntire(source)?.let {
+            return "Shared daily: used ${translate(it.groupValues[1], SupportedLanguage.ENGLISH)} / " +
+                "${translate(it.groupValues[2], SupportedLanguage.ENGLISH)} · " +
+                "${translate(it.groupValues[3], SupportedLanguage.ENGLISH)} remaining"
         }
         Regex("^诊断日志（(\\d+)）$").matchEntire(source)?.let {
             return "Diagnostic logs (${it.groupValues[1]})"
@@ -170,12 +181,25 @@ object UiText {
         Regex("^(.+)（已在 (.+)）$").matchEntire(source)?.let {
             return "${it.groupValues[1]} (in ${it.groupValues[2]})"
         }
+        Regex("^(.+)（已有个人设置）$").matchEntire(source)?.let {
+            return "${it.groupValues[1]} (has personal settings)"
+        }
+        Regex("^(.+)（个人设置已暂停）$").matchEntire(source)?.let {
+            return "${it.groupValues[1]} (personal settings paused)"
+        }
+        Regex("^加入 QQ 群：(.+)$").matchEntire(source)?.let {
+            return "Join QQ group: ${it.groupValues[1]}"
+        }
         Regex("^该时段将在次日 (.+) 结束。$").matchEntire(source)?.let {
             return "This window ends at ${it.groupValues[1]} the next day."
         }
         Regex("^支付宝捐赠：(.+)$").matchEntire(source)?.let {
             return "Alipay donation: ${it.groupValues[1]}"
         }
+        if (source == "支付宝或微信扫码支持开发") {
+            return "Support development with Alipay or WeChat Pay"
+        }
+        if (source == "查看收款码 ›") return "View payment QR codes ›"
         Regex("^(.+) · 共享额度$").matchEntire(source)?.let {
             return "${it.groupValues[1]} · shared allowance"
         }
@@ -238,10 +262,18 @@ object UiText {
         "清空模块记录" to "Clear module records",
         "今天暂无应用使用记录。" to "No app usage recorded today.",
         "Android 系统使用统计" to "Android system usage",
-        "Hook 计数未同步，请强停该应用后重新打开" to "Hook counters are not synchronized; force-stop and reopen this app",
+        "Hook 计数来自旧版本，请强停并重新打开应用" to "Hook counters came from an older version; force-stop and reopen the app",
         "需要 LSPosed" to "LSPosed required",
         "保存规则后，请在 LSPosed 中启用本模块并勾选目标应用。首次启用或修改作用域后，需要强制停止目标应用再打开。" to "After saving a rule, enable this module in LSPosed and select the target app. Force-stop and reopen it after first setup or a scope change.",
         "共享每日额度" to "Shared daily allowance",
+        "分组额度与规则" to "Group allowances and rules",
+        "启用分组管控" to "Enable group control",
+        "关闭后保留成员和规则配置，但暂不执行" to "Keep members and rules configured while pausing enforcement",
+        "分组规则" to "Group rules",
+        "组内成员共同消耗一个每日额度" to "Group members share one daily allowance",
+        "统一限制每个成员应用的单次前台使用时长" to "Apply the same per-launch foreground limit to every member",
+        "任一成员达到分组额度后，整个分组共同进入冷却" to "When one member reaches a group quota, the whole group enters cooldown",
+        "未启用规则" to "No rules enabled",
         "组内应用共同消耗一个每日额度；加入后个人规则暂停，移出分组后恢复。" to "Apps in a group share one daily allowance. Personal rules are suspended while grouped and resume after removal.",
         "可统一设置共享每日额度、单次打开、可用时段和共享冷却；加入后个人规则暂停，移出后恢复。" to "Configure shared daily, per-launch, schedule, and cooldown rules. Personal rules are suspended while grouped and resume after removal.",
         "任一成员触发后全组共用同一冷却" to "One member triggers the same cooldown for the whole group",
@@ -268,6 +300,7 @@ object UiText {
         "删除分组" to "Delete group",
         "取消" to "Cancel",
         "只会解除分组和共享额度，不会删除应用原有的独立规则。" to "This removes only the group and shared allowance; existing per-app rules remain.",
+        "只会解除分组规则，不会删除应用原有的独立规则。" to "This removes only the group rules; existing per-app rules remain.",
         "确认删除" to "Delete",
         "共享额度" to "Shared allowance",
         "待 Hook 验证" to "Hook pending",
@@ -277,6 +310,29 @@ object UiText {
         "Hook 待重载" to "Hook reload needed",
         "Hook 异常" to "Hook error",
         "管控中" to "Controlled",
+        "精细管控" to "Precise control",
+        "把使用边界设清楚" to "Set clear usage boundaries",
+        "每日累计、单次打开、可用时段和退出后冷却可以独立开启，也可以组合生效。" to "Daily, per-launch, schedule and post-exit cooldown rules can work independently or together.",
+        "任一规则先到即执行退出" to "The first rule reached enforces the limit",
+        "管理应用被清理后规则仍由 Hook 执行" to "Hook rules keep working after the manager app is cleared from Recents",
+        "本次计划" to "Session plan",
+        "打开应用前，先决定用多久" to "Decide how long to use the app",
+        "为应用开启“打开时制定计划”，每次新进程首次进入时选择本次前台使用时长。" to "Enable plan-on-launch to choose a foreground-use duration when each new app process first opens.",
+        "后台和息屏期间暂停计时" to "Timing pauses in the background and while the screen is off",
+        "计划不能超过现有应用或分组剩余额度" to "A plan cannot exceed the remaining app or group allowance",
+        "一组应用，共享一套规则" to "One app group, one shared policy",
+        "将短视频、游戏等应用归入同一组，统一配置共享每日额度、单次打开、时段和冷却。" to "Group short-video, game and similar apps under shared daily, per-launch, schedule and cooldown rules.",
+        "已选应用自动置顶，便于维护" to "Selected apps are pinned for easier management",
+        "开始之前" to "Before you begin",
+        "启用时停模块后，需要把每个受管控应用加入模块作用域，并强制停止后重新打开。" to "After enabling Time Stop, add every controlled app to the module scope, then force-stop and reopen it.",
+        "统计页按需读取系统使用时长" to "System usage is read only when needed",
+        "诊断日志可检查 HOOK_READY 与限制事件" to "Diagnostics show HOOK_READY and limit events",
+        "欢迎使用时停" to "Welcome to Time Stop",
+        "不再显示功能介绍" to "Do not show this introduction again",
+        "开始使用" to "Get started",
+        "下一页" to "Next",
+        "上一页" to "Previous",
+        "稍后再看" to "Maybe later",
         "运行前需要完成" to "Before you start",
         "本版本不需要相机、存储、通知等 Android 运行时权限。" to "This version does not need camera, storage, notification or other Android runtime permissions.",
         "1. 手机已 Root，并安装可用的 LSPosed。" to "1. Root the device and install a working LSPosed.",
@@ -284,6 +340,7 @@ object UiText {
         "3. 在模块作用域中勾选需要限制的目标应用。" to "3. Select target apps in the module scope.",
         "4. 保存规则后，强制停止目标应用并重新打开。" to "4. After saving, force-stop and reopen the target app.",
         "若诊断日志没有 HOOK_READY，说明 Hook 没有进入目标进程，请先检查第 2、3 项。" to "If diagnostics do not contain HOOK_READY, the Hook did not enter the target process. Check steps 2 and 3.",
+        "确认 LSPosed 作用域" to "Confirm the LSPosed scope",
         "我知道了" to "Got it",
         "达到限制后" to "When a limit is reached",
         "强制退出用于硬限制；独立休息页可暂停目标界面，冷静后继续" to "Force exit provides a hard limit. The standalone break page pauses the target screen and continues after cooldown",
@@ -291,6 +348,7 @@ object UiText {
         "独立休息页" to "Standalone break page",
         "达到限制后会打开时停的独立休息页，使目标界面自然暂停，并尝试暂停常见的 MediaPlayer、ExoPlayer/Media3 和网页音视频。部分系统可能询问是否允许打开时停；自研播放器、后台服务和游戏引擎可能继续运行。休息页不提供延时，主页与最近任务仍可使用；单次额度需配合冷却，结束后自动继续。切换执行方式后，请强停并重开管控应用。" to "When a limit is reached, Time Stop opens its standalone break page so the target screen pauses naturally. It also attempts to pause common MediaPlayer, ExoPlayer/Media3, and web audio/video playback. Some systems may ask before opening Time Stop; custom players, background services, and game engines may keep running. The page has no extension action; Home and Recents remain available. Pair per-launch limits with cooldown to continue automatically. Force-stop and reopen managed apps after switching enforcement mode.",
         "需先开启每日累计或单次打开，才能启用退出后冷却。" to "Enable a daily or per-launch quota before enabling post-exit cooldown.",
+        "提醒与延时" to "Warnings and extensions",
         "退出前提醒" to "Pre-exit warning",
         "到期前 5 秒在屏幕顶部显示倒计时" to "Show a countdown five seconds before exit",
         "全屏退出提醒" to "Full-screen exit warning",
@@ -301,6 +359,7 @@ object UiText {
         "默认跟随系统语言" to "Follows the system language by default",
         "跟随系统" to "System default",
         "简体中文" to "Simplified Chinese",
+        "统计与诊断" to "Statistics and diagnostics",
         "使用时长统计" to "Usage statistics",
         "统计页按需读取系统数据；共享额度会保留必要的内部计时" to "The stats page reads system data on demand; shared allowances retain required internal timing",
         "使用情况访问权限已授予" to "Usage access granted",
@@ -309,12 +368,14 @@ object UiText {
         "记录 Hook、计时、延时和退出事件" to "Record Hook, timing, extension and exit events",
         "每次点击延时（分钟）" to "Extension per tap (minutes)",
         "可设置 1–60 分钟；每次点击都会追加" to "Set 1–60 minutes; each tap adds another extension",
+        "应用设置" to "App settings",
         "隐藏桌面图标" to "Hide launcher icon",
         "隐藏后仍可从 LSPosed 模块页打开设置" to "Settings remain available from the LSPosed module page",
         "隐藏后，桌面缓存图标可能短暂残留且无法点击，刷新后会消失。可从 LSPosed 模块页，或“系统设置 → 应用 → 时停 → 应用内设置”进入；也可连接电脑执行：" to "A cached launcher icon may remain briefly and stop working until the launcher refreshes. Reopen from LSPosed, System settings → Apps → Time Stop → In-app settings, or connect a computer and run:",
         "关闭后可从 LSPosed 模块页打开应用" to "Open the app from the LSPosed module page after hiding it",
         "隐藏后请先尝试从 LSPosed 模块页打开设置。若没有入口，可连接电脑执行：" to "After hiding, first try opening settings from LSPosed. If unavailable, connect a computer and run:",
         "复制恢复命令" to "Copy recovery command",
+        "维护与支持" to "Maintenance and support",
         "检查更新" to "Check for updates",
         "正在连接 GitHub…" to "Connecting to GitHub…",
         "从 GitHub Releases 检查并下载新版 APK" to "Check GitHub Releases and download a newer APK",
@@ -322,10 +383,23 @@ object UiText {
         "反馈问题" to "Report a problem",
         "通过邮件发送设备信息和诊断日志" to "Send device information and diagnostics by email",
         "反馈 ›" to "Feedback ›",
+        "请选择反馈方式。邮件反馈会附带设备信息和诊断日志，QQ群适合交流和参与内测。" to "Choose a feedback channel. Email includes device information and diagnostics; the QQ group is better for discussion and beta testing.",
+        "邮件反馈" to "Email feedback",
+        "QQ群反馈" to "QQ group feedback",
         "关于" to "About",
         "版本、项目主页和联系方式" to "Version, project page and contact information",
         "查看 ›" to "View ›",
         "支持开发" to "Support development",
+        "加入内测" to "Join beta testing",
+        "加入 QQ 群获取测试版本并反馈问题" to "Join the QQ group for test builds and feedback",
+        "加群 ›" to "Join ›",
+        "支持时停开发" to "Support Time Stop development",
+        "支付宝" to "Alipay",
+        "微信支付" to "WeChat Pay",
+        "支付宝收款码" to "Alipay payment QR code",
+        "微信收款码" to "WeChat Pay QR code",
+        "打开支付宝付款" to "Open Alipay",
+        "尝试打开微信付款" to "Try WeChat Pay",
         "去转账 ›" to "Transfer ›",
         "已是最新版本" to "You're up to date",
         "检查更新失败" to "Update check failed",
@@ -340,6 +414,12 @@ object UiText {
         "单次打开、每日累计、每周可用时段和退出后冷却可以组合使用。" to "Per-launch, daily, weekly schedule and post-exit cooldown rules can be combined.",
         "打开 GitHub 项目主页" to "Open GitHub project",
         "发送问题反馈" to "Send feedback",
+        "查看软件声明" to "View software notice",
+        "软件声明" to "Software notice",
+        "时停项目原创内容保留全部权利。公开可见不代表授予复制、修改、再发布或商业销售许可。" to "All rights to Time Stop's original content are reserved. Public visibility does not grant permission to copy, modify, republish or sell it.",
+        "未经项目作者书面授权，不得抄袭、改名冒充、打包倒卖、收费分发或将本软件用于其他商业产品。" to "Without written authorization, do not plagiarize, impersonate, repackage for resale, distribute for a fee or embed this software in another commercial product.",
+        "第三方开源组件仍分别遵循其原有许可证；法律规定的合理使用及其他法定权利不受本声明限制。" to "Third-party open-source components remain under their respective licenses. Statutory fair use and other legal rights are unaffected.",
+        "完整条款见项目仓库根目录 LICENSE 文件。" to "See the LICENSE file in the repository root for the complete terms.",
         "关闭" to "Close",
         "无法打开链接" to "Unable to open link",
         "暂无日志。打开一次已配置的目标应用；若仍为空，请检查 LSPosed 是否启用模块及目标应用作用域。" to "No logs. Open a configured target app; if this remains empty, check the LSPosed module and scope.",
@@ -347,8 +427,10 @@ object UiText {
         "刷新" to "Refresh",
         "清空" to "Clear",
         "这是系统应用。达到限制时只关闭应用界面，不结束系统进程，以避免影响桌面或系统稳定性。" to "This is a system app. At the limit, only its UI is closed; its process is not terminated.",
+        "固定管控规则" to "Fixed control rules",
         "计划" to "Plan",
         "打开时制定计划" to "Plan on launch",
+        "可选功能：每次目标应用进程启动后，先选择本次计划使用时长" to "Optional: choose a session-plan duration when each target app process starts",
         "每次目标应用进程启动后，先选择本次计划使用时长" to "Choose a foreground-use plan when the target app process starts",
         "计划只计算前台时间；可跳过，也可在退出前重新制定。" to "Only foreground time counts; you may skip or replan before exit.",
         "计划到期时只能关闭应用界面，不结束系统进程。" to "When a plan expires, only the system app UI is closed; its process is not terminated.",

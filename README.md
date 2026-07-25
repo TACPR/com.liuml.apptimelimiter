@@ -4,13 +4,13 @@
 
 ![Android 8.1+](https://img.shields.io/badge/Android-8.1%2B-3DDC84?logo=android&logoColor=white)
 ![LSPosed API 93+](https://img.shields.io/badge/LSPosed-API%2093%2B-5C6BC0)
-![Version 0.9.5](https://img.shields.io/badge/version-0.9.5-8E44AD)
+![Version 0.9.6](https://img.shields.io/badge/version-0.9.6-8E44AD)
 
 Stock screen-time tools are usually built for reports, daily caps, and focus modes. **Time Stop** is built for people who want sharper controls: per-app quotas, per-launch timers, weekly allow/block windows, shared group budgets, cooldowns after forced exits, Hook verification, and diagnostics that show what is actually happening inside the target process.
 
 [Latest release](https://github.com/Xposed-Modules-Repo/com.liuml.apptimelimiter/releases/latest) · [LSPosed module page](https://modules.lsposed.org/module/com.liuml.apptimelimiter/) · [中文说明](#中文说明)
 
-Current version: `0.9.5`
+Current version: `0.9.6`
 
 ## Why Not Just Use Stock Screen Time?
 
@@ -172,7 +172,7 @@ This tool should be used only by the device owner or on explicitly authorized ma
 
 [下载最新版本](https://github.com/Xposed-Modules-Repo/com.liuml.apptimelimiter/releases/latest) · [LSPosed 模块页面](https://modules.lsposed.org/module/com.liuml.apptimelimiter/)
 
-当前版本：`0.9.5`
+当前版本：`0.9.6`
 
 ## 它和系统屏幕时间有什么不同？
 

@@ -9,6 +9,8 @@ import com.liuml.apptimelimiter.core.SharedCooldownPolicy
 import com.liuml.apptimelimiter.core.SharedCooldownRecord
 import com.liuml.apptimelimiter.core.CooldownPolicy
 import com.liuml.apptimelimiter.core.LimitEnforcementPolicy
+import com.liuml.apptimelimiter.core.RuleStorageBootstrapAction
+import com.liuml.apptimelimiter.core.RuleStorageBootstrapPolicy
 import com.liuml.apptimelimiter.ipc.RuleContract
 import com.liuml.apptimelimiter.core.GroupMembershipPolicy
 import java.io.File
@@ -16,7 +18,11 @@ import java.util.UUID
 
 class RuleRepository(context: Context) {
     private val appContext = context.applicationContext
-    private val prefs = openPreferences()
+    private val lifecyclePrefs = appContext.getSharedPreferences(
+        STORAGE_LIFECYCLE_PREFS_NAME,
+        Context.MODE_PRIVATE,
+    )
+    private val prefs = openPreferences().also(::prepareRuleStorage)
 
     @SuppressLint("WorldReadableFiles")
     private fun openPreferences(): SharedPreferences = try {
@@ -26,6 +32,47 @@ class RuleRepository(context: Context) {
     } catch (_: SecurityException) {
         // Keeps the UI usable on unsupported frameworks; the ContentProvider remains available.
         appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+
+    private fun prepareRuleStorage(sharedPreferences: SharedPreferences) {
+        synchronized(STORAGE_LIFECYCLE_LOCK) {
+            val privateMarkerPresent = lifecyclePrefs.getBoolean(
+                KEY_PRIVATE_STORAGE_INITIALIZED,
+                false,
+            )
+            val sharedMarkerPresent = sharedPreferences.getBoolean(
+                KEY_SHARED_STORAGE_INITIALIZED,
+                false,
+            )
+            val action = RuleStorageBootstrapPolicy.action(
+                privateMarkerPresent = privateMarkerPresent,
+                sharedMarkerPresent = sharedMarkerPresent,
+            )
+            if (action == RuleStorageBootstrapAction.KEEP) return
+            val previousGeneration = sharedPreferences.getLong(KEY_RULESET_GENERATION, 0L)
+            val nextGeneration = maxOf(
+                System.currentTimeMillis(),
+                if (previousGeneration == Long.MAX_VALUE) {
+                    Long.MAX_VALUE
+                } else {
+                    previousGeneration + 1L
+                },
+            )
+            val editor = sharedPreferences.edit()
+            if (action == RuleStorageBootstrapAction.RESET_AFTER_DATA_CLEAR) {
+                editor.clear()
+            }
+            val sharedPersisted = editor
+                .putBoolean(KEY_SHARED_STORAGE_INITIALIZED, true)
+                .putLong(KEY_RULESET_GENERATION, nextGeneration)
+                .commit()
+            if (sharedPersisted) {
+                lifecyclePrefs.edit()
+                    .putBoolean(KEY_PRIVATE_STORAGE_INITIALIZED, true)
+                    .commit()
+                makePreferencesReadable()
+            }
+        }
     }
 
     fun getRule(packageName: String): AppRule {
@@ -155,6 +202,8 @@ class RuleRepository(context: Context) {
 
     fun configuredPackages(): Set<String> =
         prefs.getStringSet(KEY_PACKAGES, emptySet()).orEmpty().toSet()
+
+    fun rulesetGeneration(): Long = prefs.getLong(KEY_RULESET_GENERATION, 0L)
 
     fun getGroups(): List<AppGroup> = prefs.getStringSet(KEY_GROUP_IDS, emptySet())
         .orEmpty()
@@ -501,6 +550,11 @@ class RuleRepository(context: Context) {
 
     companion object {
         private val GROUP_COOLDOWN_LOCK = Any()
+        private val STORAGE_LIFECYCLE_LOCK = Any()
+        private const val STORAGE_LIFECYCLE_PREFS_NAME = "storage_lifecycle"
+        private const val KEY_PRIVATE_STORAGE_INITIALIZED = "initialized"
+        const val KEY_SHARED_STORAGE_INITIALIZED = "storage.initialized"
+        const val KEY_RULESET_GENERATION = "storage.ruleset_generation"
         const val PREFS_NAME = "rules"
         const val KEY_PACKAGES = "configured_packages"
         const val KEY_GROUP_IDS = "group_ids"

@@ -148,6 +148,10 @@ class RuleProvider : ContentProvider() {
                     )
                     putLong(RuleContract.KEY_COOLDOWN_SECONDS, rule.cooldownSeconds)
                     putLong(RuleContract.KEY_VERSION, rule.version)
+                    putLong(
+                        RuleContract.KEY_RULESET_GENERATION,
+                        ruleRepository.rulesetGeneration(),
+                    )
                     putBoolean(RuleContract.KEY_EXIT_WARNING_ENABLED, settings.exitWarningEnabled)
                     putBoolean(
                         RuleContract.KEY_FULL_SCREEN_EXIT_WARNING_ENABLED,

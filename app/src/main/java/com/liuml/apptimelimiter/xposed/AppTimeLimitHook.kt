@@ -24,6 +24,7 @@ import com.liuml.apptimelimiter.core.LimitGateSnapshot
 import com.liuml.apptimelimiter.core.QuotaIncidentPolicy
 import com.liuml.apptimelimiter.core.QuotaKind
 import com.liuml.apptimelimiter.core.RestPagePolicy
+import com.liuml.apptimelimiter.core.RuleSnapshotSelectionPolicy
 import com.liuml.apptimelimiter.core.SharedCooldownPolicy
 import com.liuml.apptimelimiter.core.SharedCooldownRecord
 import com.liuml.apptimelimiter.core.UsageMath
@@ -3136,6 +3137,10 @@ private class RuntimeLimiter(
                 ),
                 diagnosticsEnabled = result.getBoolean(RuleContract.KEY_DIAGNOSTICS_ENABLED, true),
                 usageStatsEnabled = result.getBoolean(RuleContract.KEY_USAGE_STATS_ENABLED, true),
+                rulesetGeneration = result.getLong(
+                    RuleContract.KEY_RULESET_GENERATION,
+                    0L,
+                ),
                 source = "provider",
             )
             diagnosticsEnabled = rule.diagnosticsEnabled
@@ -3169,7 +3174,12 @@ private class RuntimeLimiter(
             rawSharedRule
         }
         val rule = when {
-            sharedRule != null && (cachedRule == null || sharedRule.version >= cachedRule.version) -> {
+            sharedRule != null && RuleSnapshotSelectionPolicy.shouldUseShared(
+                sharedGeneration = sharedRule.rulesetGeneration,
+                sharedVersion = sharedRule.version,
+                cachedGeneration = cachedRule?.rulesetGeneration,
+                cachedVersion = cachedRule?.version,
+            ) -> {
                 cacheRule(context, sharedRule)
                 sharedRule
             }
@@ -3183,6 +3193,10 @@ private class RuntimeLimiter(
 
     private fun readXSharedRule(): HookRule? {
         val prefix = "rule.$packageName."
+        val rulesetGeneration = preferences.getLong(
+            RuleRepository.KEY_RULESET_GENERATION,
+            0L,
+        )
         val storedVersion = preferences.getLong("${prefix}version", Long.MIN_VALUE)
         val membershipVersion = preferences.getLong(
             "${RuleRepository.KEY_PACKAGE_GROUP_VERSION_PREFIX}$packageName",
@@ -3204,7 +3218,14 @@ private class RuntimeLimiter(
         val groupDailyEnabled = groupEnabled &&
             preferences.getBoolean("${groupPrefix}daily_enabled", true)
         if (storedVersion == Long.MIN_VALUE && membershipVersion == Long.MIN_VALUE && !groupAssigned) {
-            return null
+            return if (rulesetGeneration > 0L) {
+                unavailableRule(
+                    rulesetGeneration = rulesetGeneration,
+                    source = "xsharedpreferences_reset",
+                )
+            } else {
+                null
+            }
         }
         val version = storedVersion.takeIf { it != Long.MIN_VALUE } ?: 0L
         val legacyEnabled = preferences.getBoolean("${prefix}enabled", false)
@@ -3369,6 +3390,7 @@ private class RuntimeLimiter(
             ),
             diagnosticsEnabled = preferences.getBoolean(RuleRepository.KEY_DIAGNOSTICS_ENABLED, true),
             usageStatsEnabled = preferences.getBoolean(RuleRepository.KEY_USAGE_STATS_ENABLED, true),
+            rulesetGeneration = rulesetGeneration,
             source = "xsharedpreferences",
         )
     }
@@ -3415,6 +3437,7 @@ private class RuntimeLimiter(
             rule.limitEnforcementMode.name,
             rule.diagnosticsEnabled,
             rule.usageStatsEnabled,
+            rule.rulesetGeneration,
         ).joinToString("|")
         val prefs = context.getSharedPreferences(RULE_CACHE_PREFS, Context.MODE_PRIVATE)
         if (prefs.getString(CACHE_SIGNATURE, null) == signature) return
@@ -3475,6 +3498,7 @@ private class RuntimeLimiter(
             .putString(CACHE_LIMIT_ENFORCEMENT_MODE, rule.limitEnforcementMode.name)
             .putBoolean(CACHE_DIAGNOSTICS_ENABLED, rule.diagnosticsEnabled)
             .putBoolean(CACHE_USAGE_STATS_ENABLED, rule.usageStatsEnabled)
+            .putLong(CACHE_RULESET_GENERATION, rule.rulesetGeneration)
             .putString(CACHE_SIGNATURE, signature)
             .commit()
     }
@@ -3618,11 +3642,15 @@ private class RuntimeLimiter(
             ),
             diagnosticsEnabled = prefs.getBoolean(CACHE_DIAGNOSTICS_ENABLED, true),
             usageStatsEnabled = prefs.getBoolean(CACHE_USAGE_STATS_ENABLED, true),
+            rulesetGeneration = prefs.getLong(CACHE_RULESET_GENERATION, 0L),
             source = "local_cache",
         )
     }
 
-    private fun unavailableRule() = HookRule(
+    private fun unavailableRule(
+        rulesetGeneration: Long = 0L,
+        source: String = "unavailable",
+    ) = HookRule(
         enabled = false,
         sessionPlanningEnabled = false,
         dailyEnabled = false,
@@ -3666,7 +3694,8 @@ private class RuntimeLimiter(
         limitEnforcementMode = LimitEnforcementMode.FORCE_EXIT,
         diagnosticsEnabled = true,
         usageStatsEnabled = true,
-        source = "unavailable",
+        rulesetGeneration = rulesetGeneration,
+        source = source,
     )
 
     private fun diagnostic(
@@ -3745,6 +3774,7 @@ private class RuntimeLimiter(
         val limitEnforcementMode: LimitEnforcementMode,
         val diagnosticsEnabled: Boolean,
         val usageStatsEnabled: Boolean,
+        val rulesetGeneration: Long,
         val source: String,
     )
 
@@ -3855,6 +3885,7 @@ private class RuntimeLimiter(
         const val CACHE_LIMIT_ENFORCEMENT_MODE = "limit_enforcement_mode"
         const val CACHE_DIAGNOSTICS_ENABLED = "diagnostics_enabled"
         const val CACHE_USAGE_STATS_ENABLED = "usage_stats_enabled"
+        const val CACHE_RULESET_GENERATION = "ruleset_generation"
         const val OUTBOX_PENDING = "pending"
         const val OUTBOX_DAYS = "days"
         const val OUTBOX_DURATION_MS = "duration_ms"

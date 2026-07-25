@@ -82,6 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -107,15 +108,18 @@ import com.liuml.apptimelimiter.data.ScheduleMode
 import com.liuml.apptimelimiter.data.ScheduleWindow
 import com.liuml.apptimelimiter.core.GroupUsagePolicy
 import com.liuml.apptimelimiter.core.CooldownPolicy
+import com.liuml.apptimelimiter.core.DonationPromptPolicy
 import com.liuml.apptimelimiter.localization.AppLocaleController
 import com.liuml.apptimelimiter.localization.SupportedLanguage
 import com.liuml.apptimelimiter.localization.UiText
 import com.liuml.apptimelimiter.diagnostics.DiagnosticsRepository
+import com.liuml.apptimelimiter.support.DonationLinkPolicy
 import com.liuml.apptimelimiter.support.FeedbackSender
 import com.liuml.apptimelimiter.settings.LauncherIconController
 import com.liuml.apptimelimiter.statistics.AppUsageSummary
 import com.liuml.apptimelimiter.statistics.CalculatedUsageSummary
 import com.liuml.apptimelimiter.statistics.DeviceUsageStatsRepository
+import com.liuml.apptimelimiter.statistics.HookCounterSyncPolicy
 import com.liuml.apptimelimiter.statistics.UsageStatsRepository
 import com.liuml.apptimelimiter.update.ReleaseInfo
 import com.liuml.apptimelimiter.update.UpdateCheckResult
@@ -214,6 +218,7 @@ private fun TimeLimiterScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showFeedbackOptions by remember { mutableStateOf(false) }
+    var showDonation by remember { mutableStateOf(false) }
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
     var selectedSection by remember { mutableStateOf(MainSection.HOME) }
@@ -235,6 +240,43 @@ private fun TimeLimiterScreen(
         )
     }
     var showSetupGuide by remember { mutableStateOf(false) }
+    var showDonationPrompt by rememberSaveable {
+        val preferences = context.getSharedPreferences("ui", Context.MODE_PRIVATE)
+        val todayEpochDay = LocalDate.now().toEpochDay()
+        val storedFirstUseDay = if (preferences.contains(DONATION_FIRST_USE_DAY_KEY)) {
+            preferences.getLong(DONATION_FIRST_USE_DAY_KEY, todayEpochDay)
+        } else {
+            null
+        }
+        val storedLastPromptDay = if (
+            preferences.contains(DONATION_LAST_PROMPT_DAY_KEY)
+        ) {
+            preferences.getLong(DONATION_LAST_PROMPT_DAY_KEY, todayEpochDay)
+        } else {
+            null
+        }
+        val decision = DonationPromptPolicy.onLaunch(
+            storedFirstUseEpochDay = storedFirstUseDay,
+            storedLastPromptEpochDay = storedLastPromptDay,
+            storedLaunchesSincePrompt = preferences.getInt(
+                DONATION_LAUNCHES_SINCE_PROMPT_KEY,
+                0,
+            ),
+            todayEpochDay = todayEpochDay,
+            disabled = preferences.getBoolean(DONATION_PROMPT_DISABLED_KEY, false),
+        )
+        val editor = preferences.edit()
+            .putLong(DONATION_FIRST_USE_DAY_KEY, decision.firstUseEpochDay)
+            .putInt(
+                DONATION_LAUNCHES_SINCE_PROMPT_KEY,
+                decision.launchesSincePrompt,
+            )
+        decision.lastPromptEpochDay?.let {
+            editor.putLong(DONATION_LAST_PROMPT_DAY_KEY, it)
+        }
+        editor.apply()
+        mutableStateOf(decision.shouldPrompt)
+    }
 
     val groupByPackage = remember(groups) {
         groups.filter(AppGroup::enabled)
@@ -692,7 +734,10 @@ private fun TimeLimiterScreen(
             ),
             usageAccessGranted = usageAccessGranted,
             onDismiss = { showSettings = false },
-            onDonate = { openAlipayDonation(context) },
+            onDonate = {
+                showSettings = false
+                showDonation = true
+            },
             onCheckUpdates = {
                 showSettings = false
                 checkingUpdate = true
@@ -712,7 +757,10 @@ private fun TimeLimiterScreen(
             },
             onCopyRecoveryCommand = {
                 context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
-                    ClipData.newPlainText("恢复应用入口", LauncherIconController.RECOVERY_COMMAND),
+                    ClipData.newPlainText(
+                        localizedText(context, "恢复应用入口", "Restore app entry"),
+                        LauncherIconController.RECOVERY_COMMAND,
+                    ),
                 )
                 Toast.makeText(
                     context,
@@ -883,6 +931,18 @@ private fun TimeLimiterScreen(
         )
     }
 
+    if (showDonation) {
+        DonationDialog(
+            onDismiss = { showDonation = false },
+            onOpenAlipay = {
+                if (openAlipayDonation(context)) showDonation = false
+            },
+            onOpenWechat = {
+                if (openWechatDonation(context)) showDonation = false
+            },
+        )
+    }
+
     if (scopeReminderPackages.isNotEmpty()) {
         val appByPackage = remember(apps) { apps.associateBy(InstalledApp::packageName) }
         val labels = scopeReminderPackages.map { appByPackage[it]?.label ?: it }.sorted()
@@ -1005,6 +1065,21 @@ private fun TimeLimiterScreen(
         SetupGuideDialog(
             onDismiss = {
                 showSetupGuide = false
+            },
+        )
+    } else if (showDonationPrompt) {
+        DonationPromptDialog(
+            onSupport = {
+                showDonationPrompt = false
+                showDonation = true
+            },
+            onLater = { showDonationPrompt = false },
+            onNeverShowAgain = {
+                context.getSharedPreferences("ui", Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(DONATION_PROMPT_DISABLED_KEY, true)
+                    .apply()
+                showDonationPrompt = false
             },
         )
     }
@@ -1310,10 +1385,12 @@ private fun UsageStatisticsScreen(
             items(sorted, key = AppUsageSummary::packageName) { summary ->
                 val app = appByPackage[summary.packageName]
                 val controlled = summary.packageName in controlledPackages
-                val currentHookReported = summary.lastHookEventAtMillis > 0L &&
-                    summary.hookVersionCode >= BuildConfig.VERSION_CODE
-                val hookReportMissing = controlled && !currentHookReported &&
-                    (summary.durationMillis > 0L || summary.launchCount > 0 || summary.limitHitCount > 0)
+                val staleHookReport = controlled &&
+                    HookCounterSyncPolicy.shouldShowReloadWarning(
+                        lastHookEventAtMillis = summary.lastHookEventAtMillis,
+                        hookVersionCode = summary.hookVersionCode,
+                        currentVersionCode = BuildConfig.VERSION_CODE,
+                    )
                 Surface(
                     color = if (controlled) Color(0xFFF2F6FF) else Color.White,
                     shape = RoundedCornerShape(18.dp),
@@ -1352,9 +1429,9 @@ private fun UsageStatisticsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (hookReportMissing) {
+                            if (staleHookReport) {
                                 Text(
-                                    "Hook 计数未同步，请强停该应用后重新打开",
+                                    "Hook 计数来自旧版本，请强停并重新打开应用",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color(0xFFB54708),
                                 )
@@ -2587,8 +2664,8 @@ private fun SettingsDialog(
                 item {
                     SettingsEntry(
                         title = "支持开发",
-                        description = "支付宝捐赠：$DONATION_ACCOUNT",
-                        action = "去转账 ›",
+                        description = "支付宝或微信扫码支持开发",
+                        action = "查看收款码 ›",
                         onClick = onDonate,
                     )
                 }
@@ -2743,6 +2820,172 @@ private fun FeedbackOptionsDialog(
     )
 }
 
+private enum class DonationChannel {
+    ALIPAY,
+    WECHAT,
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun DonationPromptDialog(
+    onSupport: () -> Unit,
+    onLater: () -> Unit,
+    onNeverShowAgain: () -> Unit,
+) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onLater,
+        title = {
+            Text(
+                localizedText(
+                    context,
+                    "如果时停帮到了你",
+                    "If Time Stop has helped you",
+                ),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    localizedText(
+                        context,
+                        "时停坚持无广告、无后台常驻，并持续适配新的 Android 与 LSPosed 版本。",
+                        "Time Stop stays ad-free, avoids a persistent background service, and keeps adapting to new Android and LSPosed versions.",
+                    ),
+                )
+                Text(
+                    localizedText(
+                        context,
+                        "如果它帮你少刷了一会儿、按计划休息，欢迎请开发者喝杯咖啡。每一份支持都会鼓励我继续修复兼容问题、完善使用体验。",
+                        "If it helped you scroll less or rest on time, you can buy the developer a coffee. Every contribution encourages continued compatibility fixes and improvements.",
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    localizedText(
+                        context,
+                        "捐助完全自愿，不捐助也不会影响任何功能。",
+                        "Donations are entirely optional and never affect app features.",
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onSupport) {
+                Text(localizedText(context, "看看支持方式", "View support options"))
+            }
+        },
+        dismissButton = {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onNeverShowAgain) {
+                    Text(localizedText(context, "不再提示", "Do not show again"))
+                }
+                TextButton(onClick = onLater) {
+                    Text(localizedText(context, "稍后再说", "Maybe later"))
+                }
+            }
+        },
+    )
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun DonationDialog(
+    onDismiss: () -> Unit,
+    onOpenAlipay: () -> Unit,
+    onOpenWechat: () -> Unit,
+) {
+    val context = LocalContext.current
+    var channel by rememberSaveable { mutableStateOf(DonationChannel.ALIPAY) }
+    val isAlipay = channel == DonationChannel.ALIPAY
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(localizedText(context, "支持时停开发", "Support Time Stop development"))
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = isAlipay,
+                            onClick = { channel = DonationChannel.ALIPAY },
+                            label = { Text("支付宝") },
+                        )
+                        FilterChip(
+                            selected = !isAlipay,
+                            onClick = { channel = DonationChannel.WECHAT },
+                            label = { Text("微信支付") },
+                        )
+                    }
+                }
+                item {
+                    Image(
+                        painter = painterResource(
+                            if (isAlipay) {
+                                R.drawable.donation_alipay_qr
+                            } else {
+                                R.drawable.donation_wechat_qr
+                            },
+                        ),
+                        contentDescription = localizedText(
+                            context,
+                            if (isAlipay) "支付宝收款码" else "微信收款码",
+                            if (isAlipay) "Alipay payment QR code" else "WeChat Pay QR code",
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 430.dp)
+                            .clip(RoundedCornerShape(18.dp)),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+                item {
+                    Text(
+                        localizedText(
+                            context,
+                            if (isAlipay) {
+                                "点击下方按钮可直接尝试打开该支付宝收款页。付款前请核对收款人 TAVPR（**亮）。"
+                            } else {
+                                "微信可能阻止外部应用直接打开个人收款码；若无法跳转，请截图后在微信扫一扫中从相册识别。付款前请核对收款人懒云（**亮）。"
+                            },
+                            if (isAlipay) {
+                                "Tap below to open this Alipay payment page. Verify the recipient before paying."
+                            } else {
+                                "WeChat may block direct personal payment links. If so, take a screenshot and scan it from the WeChat album."
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = if (isAlipay) onOpenAlipay else onOpenWechat) {
+                Text(
+                    localizedText(
+                        context,
+                        if (isAlipay) "打开支付宝付款" else "尝试打开微信付款",
+                        if (isAlipay) "Open Alipay" else "Try WeChat Pay",
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(localizedText(context, "关闭", "Close"))
+            }
+        },
+    )
+}
+
 @Composable
 private fun AboutDialog(
     onDismiss: () -> Unit,
@@ -2806,37 +3049,57 @@ private fun openUrl(context: Context, url: String) {
         }
 }
 
-private fun openAlipayDonation(context: Context) {
+private fun openAlipayDonation(context: Context): Boolean {
     val transferUri = Uri.Builder()
         .scheme("alipays")
         .authority("platformapi")
         .appendPath("startapp")
-        .appendQueryParameter("appId", "20000123")
-        .appendQueryParameter("actionType", "toAccount")
-        .appendQueryParameter("goBack", "YES")
-        .appendQueryParameter("account", DONATION_ACCOUNT)
+        .appendQueryParameter("saId", "10000007")
+        .appendQueryParameter("qrcode", DonationLinkPolicy.ALIPAY_QR_CONTENT)
         .build()
     val transferIntent = Intent(Intent.ACTION_VIEW, transferUri)
-        .setPackage(ALIPAY_PACKAGE)
+        .setPackage(DonationLinkPolicy.ALIPAY_PACKAGE)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-    runCatching { context.startActivity(transferIntent) }
-        .onFailure {
-            val clipboard = context.getSystemService(ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(ClipData.newPlainText("支付宝账号", DONATION_ACCOUNT))
-            val launchIntent = context.packageManager.getLaunchIntentForPackage(ALIPAY_PACKAGE)
-                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (launchIntent != null) runCatching { context.startActivity(launchIntent) }
-            Toast.makeText(
+    return runCatching {
+        context.startActivity(transferIntent)
+        true
+    }.getOrElse {
+        Toast.makeText(
+            context,
+            localizedText(
                 context,
-                localizedText(
-                    context,
-                    "支付宝账号已复制：$DONATION_ACCOUNT，请在转账前核对账号",
-                    "Alipay account copied: $DONATION_ACCOUNT. Verify it before transferring.",
-                ),
-                Toast.LENGTH_LONG,
-            ).show()
-        }
+                "无法直接打开支付宝收款页，请使用页面中的收款码",
+                "Could not open the Alipay payment page. Please use the QR code.",
+            ),
+            Toast.LENGTH_LONG,
+        ).show()
+        false
+    }
+}
+
+private fun openWechatDonation(context: Context): Boolean {
+    val transferIntent = Intent(
+        Intent.ACTION_VIEW,
+        Uri.parse(DonationLinkPolicy.WECHAT_QR_CONTENT),
+    )
+        .setPackage(DonationLinkPolicy.WECHAT_PACKAGE)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return runCatching {
+        context.startActivity(transferIntent)
+        true
+    }.getOrElse {
+        Toast.makeText(
+            context,
+            localizedText(
+                context,
+                "微信不允许直接打开此个人收款码，请截图后在微信扫一扫中从相册识别",
+                "WeChat blocked this personal payment link. Take a screenshot and scan it from the WeChat album.",
+            ),
+            Toast.LENGTH_LONG,
+        ).show()
+        false
+    }
 }
 
 private fun openQqGroup(context: Context) {
@@ -2856,7 +3119,10 @@ private fun openQqGroup(context: Context) {
     if (opened) return
 
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
-        ClipData.newPlainText("时停 QQ 群", QQ_GROUP_NUMBER),
+        ClipData.newPlainText(
+            localizedText(context, "时停 QQ 群", "Time Stop QQ group"),
+            QQ_GROUP_NUMBER,
+        ),
     )
     QQ_PACKAGES.firstNotNullOfOrNull { packageName ->
         context.packageManager.getLaunchIntentForPackage(packageName)
@@ -2874,12 +3140,14 @@ private fun openQqGroup(context: Context) {
     ).show()
 }
 
-private const val DONATION_ACCOUNT = "liuml.yx@139.com"
-private const val ALIPAY_PACKAGE = "com.eg.android.AlipayGphone"
 private const val QQ_GROUP_NUMBER = "1009712674"
 private val QQ_PACKAGES = listOf("com.tencent.mobileqq", "com.tencent.tim")
 private const val FEATURE_INTRO_DISABLED_KEY = "feature_intro_disabled"
 private const val BETA_INVITE_DISABLED_KEY = "beta_invite_disabled"
+private const val DONATION_FIRST_USE_DAY_KEY = "donation_first_use_epoch_day"
+private const val DONATION_LAST_PROMPT_DAY_KEY = "donation_last_prompt_epoch_day"
+private const val DONATION_LAUNCHES_SINCE_PROMPT_KEY = "donation_launches_since_prompt"
+private const val DONATION_PROMPT_DISABLED_KEY = "donation_prompt_disabled"
 
 private fun localizedText(context: Context, chinese: String, english: String): String {
     val mode = RuleRepository(context).getGlobalSettings().languageMode
